@@ -19,3 +19,8 @@ env/
 .env
 config.ini
 .DS_Store
+
+# Ignore database files
+*.sqlite3
+*.db
+*.sql
