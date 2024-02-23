@@ -1,14 +1,14 @@
 from functools import wraps
 
-from flask import jsonify, g
+from flask import jsonify, g, current_app
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
-from .db import session
 from .models import User
 
 
 def get_current_user():
     """Get the current user from the JWT api_token"""
+    session = current_app.db_session.get_session()
     current_user_id = get_jwt_identity()
     current_user = session.query(User).filter_by(id=current_user_id).first()
     return current_user

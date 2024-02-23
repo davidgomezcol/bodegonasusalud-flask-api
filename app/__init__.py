@@ -1,6 +1,10 @@
+import os
+
 from flask import Flask
 from flask_jwt_extended import JWTManager
 from flask_restful import Api
+
+from db import DatabaseSession
 
 
 def create_app(config_class=None, testing=False):
@@ -8,12 +12,16 @@ def create_app(config_class=None, testing=False):
     app = Flask(__name__)
 
     if config_class:
-        app.config.from_object('config.Config')
+        app.config.from_object(config_class)
 
     if testing:
         # Apply test configuration if testing is True
-        app.config.from_object('config.TestConfig')
+        app.config.from_object('flask_api.config.TestConfig')
         app.config['SERVER_NAME'] = 'localhost:9000'
+        app.config['TESTING'] = True
+
+    with app.app_context():
+        app.db_session = DatabaseSession(config=app.config)
 
     # Set JWT configuration
     app.config['JWT_SECRET_KEY'] = 'your_secret_key'  # Replace with your actual JWT secret key
@@ -21,6 +29,12 @@ def create_app(config_class=None, testing=False):
     app.config['JWT_HEADER_TYPE'] = 'Bearer'
     app.config['UPLOAD_FOLDER'] = 'media/product'
     app.config['DEBUG'] = True
+    try:
+        upload_folder = os.path.join('/opt/project/flask_api/', app.config['UPLOAD_FOLDER'])
+        print(f"Creating upload folder at: {upload_folder}")
+        os.makedirs(upload_folder, exist_ok=True)
+    except Exception as e:
+        print(f"Failed to create upload folder: {e}")
     # app.config['JWT_ACCESS_COOKIE_NAME'] = 'your_access_cookie_name'
 
     # Initialize JWT
@@ -30,15 +44,11 @@ def create_app(config_class=None, testing=False):
 
     # Import and register resources here
     # pylint: disable=import-outside-toplevel, no-name-in-module
-    from app.api_token.resources.token_resource import ApiTokenResource
-    from app.products.resources.products_resource import ProductsResource
-    from app.categories.resources.categories_resource import CategoriesResource
-    from app.orders.resources.orders_resource import OrdersResource
-    from app.templates.routes import templates_bp
-
-    # from app.api_token.routes import token_bp
-    # from app.products.routes import products_bp
-    # from app.categories.routes import categories_bp
+    from flask_api.app.api_token.resources.token_resource import ApiTokenResource
+    from flask_api.app.products.resources.products_resource import ProductsResource
+    from flask_api.app.categories.resources.categories_resource import CategoriesResource
+    from flask_api.app.orders.resources.orders_resource import OrdersResource
+    from flask_api.app.templates.routes import templates_bp
 
     api.add_resource(ApiTokenResource, '/api/get_token/')
     api.add_resource(ProductsResource, '/api/products/')
@@ -46,8 +56,5 @@ def create_app(config_class=None, testing=False):
     api.add_resource(OrdersResource, '/api/orders/')
 
     app.register_blueprint(templates_bp)
-    # app.register_blueprint(token_bp)
-    # app.register_blueprint(products_bp)
-    # app.register_blueprint(categories_bp)
 
     return app

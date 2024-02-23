@@ -12,7 +12,15 @@ class User(Base):
     id: int = Column(Integer, primary_key=True)
     name: str = Column(String(255), nullable=False)
     email: str = Column(String(255), nullable=False)
+    last_name: str = Column(String(255), nullable=False)
+    phone: str = Column(String(50), nullable=False)
+    state: str = Column(String(50), nullable=False)
+    zip_code: str = Column(String(50), nullable=False)
+    address: str = Column(String(255), nullable=False)
+    city: str = Column(String(50), nullable=False)
     is_active: bool = Column(Boolean, default=False)
+    id_number: str = Column(String(50), nullable=True)
+    id_type: str = Column(String(50), nullable=True)
     is_superuser: bool = Column(Boolean, default=False)
     is_staff: bool = Column(Boolean, default=False)
     password: str = Column(String(255), nullable=False)
@@ -40,7 +48,7 @@ class Product(Base):
     image: str = Column(String(500))
     user_id: int = Column(Integer, ForeignKey('core_user.id'))
     discount: float = Column(Float)
-    categories = relationship(
+    category = relationship(
         "Category",
         secondary=products_categories_association,
         backref="core_products",

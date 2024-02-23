@@ -1,10 +1,9 @@
-from flask import jsonify, request
+from flask import jsonify, request, current_app
 from flask_restful import Resource
 from pydantic import BaseModel, Field
 
-from app.auth import auth_required
-from app.db import session
-from app.models import Category
+from flask_api.app.auth import auth_required
+from flask_api.app.models import Category
 
 
 class CategorySchema(BaseModel):
@@ -19,16 +18,19 @@ class CategoryService:
     @classmethod
     def get_all_categories(cls):
         """Get all categories"""
+        session = current_app.db_session.get_session()
         return session.query(Category).all()
 
     @classmethod
     def get_many_categories(cls, category_ids: list):
         """Get a category by ID"""
+        session = current_app.db_session.get_session()
         return session.query(Category).filter(Category.id.in_(category_ids)).all()
 
     @classmethod
     def create_category(cls, category_data: CategorySchema, commit: bool = True):
         """Create a new category"""
+        session = current_app.db_session.get_session()
         new_category = Category(**category_data.model_dump())
         session.add(new_category)
 
@@ -54,7 +56,7 @@ class CategoriesResource(Resource):
         except Exception as e:
             return jsonify("Error: " + str(e))
 
-    # @auth_required
+    @auth_required
     def post(self):
         """Create a new category"""
         try:

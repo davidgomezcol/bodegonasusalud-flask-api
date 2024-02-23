@@ -1,12 +1,16 @@
-import pytest
+import time
+
 import docker
 import psycopg2
-import time
-from pytest_postgresql.janitor import DatabaseJanitor
+import pytest
 from docker.errors import NotFound, DockerException
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm.session import sessionmaker
+from flask import current_app
+from pytest_postgresql.janitor import DatabaseJanitor
+from sqlalchemy import text
 
+from db import DatabaseSession
+from flask_api.app import create_app
+from flask_api.config import TestConfig
 
 POSTGRES_PASSWORD = 'supersecretpassword'
 PORT = 5432
@@ -14,8 +18,32 @@ USER = 'postgres'
 DB = 'postgres'
 
 
+@pytest.fixture(scope="session", autouse=True)
+def app():
+    """Create and configure a new app instance for each test."""
+    app = create_app(testing=True)
+    with app.app_context():
+        yield app
+
+
+@pytest.fixture(scope="function", autouse=True)
+def clear_database(app):
+    """Clear the database after each test."""
+    yield
+    # This code is run after each test
+    session = current_app.db_session.get_session()
+    session.execute(text('DELETE FROM core_products_category'))
+    session.execute(text('DELETE FROM core_products CASCADE'))
+    session.execute(text('DELETE FROM core_categories CASCADE'))
+    session.execute(text('DELETE FROM core_orders CASCADE'))
+    session.execute(text('DELETE FROM core_orderitem CASCADE'))
+    session.commit()
+    current_app.db_session.close_session()
+
+
 def wait_for_postgres(dbname, user, password, host, port):
-    for _ in range(5):  # Increase timeout
+    """Wait for the PostgreSQL server to start."""
+    for _ in range(5):  # Try 5 times
         try:
             conn = psycopg2.connect(
                 dbname=dbname,
@@ -28,27 +56,28 @@ def wait_for_postgres(dbname, user, password, host, port):
             return
         except psycopg2.OperationalError:
             time.sleep(5)
-    raise Exception("Cannot connect to PostgreSQL server")
+    raise ConnectionError("Cannot connect to PostgreSQL server")
 
 
 @pytest.fixture(scope="session")
-def psql_docker():
+def _psql_docker():
+    """Start a PostgreSQL server using Docker."""
     client = docker.from_env()
     try:
         container = client.containers.run(
             image="postgres:13",
             auto_remove=True,
-            environment=dict(
-                POSTGRES_DB=f'{DB}_tmpl',
-                POSTGRES_PASSWORD=POSTGRES_PASSWORD,
-            ),
+            environment={
+                'POSTGRES_DB': f'{DB}_tmpl',
+                'POSTGRES_PASSWORD': POSTGRES_PASSWORD,
+            },
             name="test_postgres",
             detach=True,
             remove=True,
         )
 
     except DockerException as e:
-        raise Exception(f"Error starting Docker container: {e}")
+        raise RuntimeError(f"Error starting Docker container: {e}") from e
 
     # Connect the container to the Docker Compose network
     network_name = "django_react_webserver"  # Replace with the actual network name
@@ -56,10 +85,10 @@ def psql_docker():
         network = client.networks.get(network_name)
         network.connect(container)
     except NotFound as e:
-        raise Exception(f"Error connecting to Docker network: {e}")
+        raise ConnectionError(f"Error connecting to Docker network: {e}") from e
 
     # Wait for the PostgreSQL server to start
-    wait_for_postgres(f'{DB}_tmpl', USER, POSTGRES_PASSWORD, "test_postgres", PORT)  # Use localhost as host name
+    wait_for_postgres(f'{DB}_tmpl', USER, POSTGRES_PASSWORD, "test_postgres", PORT)
 
     yield
 
@@ -67,7 +96,15 @@ def psql_docker():
 
 
 @pytest.fixture(scope="session")
-def database(psql_docker):
+def _db_session():
+    """Create a database session for the tests."""
+    db_session = DatabaseSession(config=TestConfig)
+    db_session.set_base()
+    return db_session
+
+
+@pytest.fixture(scope="session")
+def database(_psql_docker, _db_session):
     """Create a database for the tests"""
     janitor = DatabaseJanitor(
         user=USER,
@@ -79,46 +116,18 @@ def database(psql_docker):
     )
     janitor.init()
 
-    engine = create_engine(f'postgresql://{USER}:{POSTGRES_PASSWORD}@test_postgres:{PORT}/{DB}_test')
-    test_session = sessionmaker(bind=engine)
-    test_session = test_session()
-
-    with open('/opt/project/flask_api/schema.sql', 'r') as f:
+    with open('/opt/project/flask_api/schema.sql', 'r', encoding='utf-8') as f:
         sql_statements = f.read()
     sql_statements_text = text(sql_statements)
-    test_session.execute(sql_statements_text)
-    test_session.commit()
-    test_session.close()
+    session = _db_session.get_session()
+    session.execute(sql_statements_text)
+    session.commit()
+    session.close()
 
-    yield engine
+    yield session
+
+    current_app.db_session.close_session()
     janitor.drop()
 
-
-# @pytest.fixture(scope="session")
-# def session_maker(database):
-#     """Create a session to interact with the database"""
-#     return sessionmaker(bind=database)
-#
-#
-# @pytest.fixture(scope="function")
-# def session(database, session_maker):
-#     """Create a session to interact with the database"""
-#     connection = database.connect()
-#     transaction = connection.begin()
-#     test_session = session_maker(bind=connection)
-#
-#     yield test_session
-#
-#     test_session.close()
-#     transaction.rollback()
-#     connection.close()
-
-
-    # with open('/opt/project/flask_api/schema.sql', 'r') as f:
-    #     sql_statements = f.read()
-    #
-    # sql_statements_text = text(sql_statements)
-    # session.execute(sql_statements_text)
-    # session.commit()
-
+# If we need to dump a new schema, we can use the following command:
 # pg_dump -U postgres -h db -p 5432 --no-owner --no-privileges --file=complete_dump.sql postgres

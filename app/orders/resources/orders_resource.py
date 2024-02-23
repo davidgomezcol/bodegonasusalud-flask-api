@@ -3,13 +3,12 @@ import string
 from datetime import datetime
 from typing import Optional
 
-from flask import jsonify, request
+from flask import jsonify, request, current_app
 from flask_restful import Resource
 from pydantic import BaseModel, Field, field_validator
 
-from app.auth import auth_required
-from app.db import session
-from app.models import Orders, OrderItem
+from flask_api.app.auth import auth_required
+from flask_api.app.models import Orders, OrderItem
 
 
 def _generate_tracking_number(length: int = 10) -> str:
@@ -27,6 +26,7 @@ class OrderItemSchema(BaseModel):
     order_id: int = Field(default=Orders.id, description="Order ID")
     discount: float = Field(..., description="Discount")
 
+    @classmethod
     @field_validator('total_price')
     def _validate_total_price(cls, total_price: Optional[float], values: dict):
         if total_price is None:
@@ -52,6 +52,7 @@ class OrderSchema(BaseModel):
     shipped_date: Optional[datetime] = Field(default=None, description="Shipped date")
     order_items: list[OrderItemSchema] = Field(..., description="List of order items")
 
+    @classmethod
     @field_validator('order_total')
     def _validate_order_total(cls, order_total: Optional[float], values: dict):
         if order_total is None:
@@ -68,11 +69,13 @@ class OrderService:
     @classmethod
     def get_all_orders(cls):
         """Get all orders"""
+        session = current_app.db_session.get_session()
         return session.query(Orders).all()
 
     @classmethod
     def create_order(cls, order_data: OrderSchema, commit: bool = True):
         """Create a new order"""
+        session = current_app.db_session.get_session()
         new_order = Orders(**order_data.model_dump(exclude={'order_items'}))
         # new_order.order_items = [
         #     OrderItemsService.create_order_item(order_item, False) for order_item in order_data.order_items
@@ -99,16 +102,19 @@ class OrderItemsService:
     @classmethod
     def get_all_order_items(cls):
         """Get all order items"""
+        session = current_app.db_session.get_session()
         return session.query(OrderItem).all()
 
     @classmethod
     def get_many_order_items(cls, order_item_ids: list):
         """Get a order item by ID"""
+        session = current_app.db_session.get_session()
         return session.query(OrderItem).filter(OrderItem.id.in_(order_item_ids)).all()
 
     @classmethod
     def create_order_item(cls, order_item_data: OrderItemSchema, commit: bool = True):
         """Create a new order item"""
+        session = current_app.db_session.get_session()
         new_order_item = OrderItem(**order_item_data.model_dump())
         session.add(new_order_item)
 
@@ -119,6 +125,7 @@ class OrderItemsService:
     @classmethod
     def create_many_order_items(cls, order_items_list: list[OrderItemSchema], commit: bool = True):
         """Create a new order item"""
+        session = current_app.db_session.get_session()
         new_order_items_list = []
         for order_item in order_items_list:
             # order_item.total_price = cls.calculate_order_item_totals(order_item)

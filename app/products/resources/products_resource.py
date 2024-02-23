@@ -2,17 +2,16 @@ import os
 import uuid
 from typing import Union
 
-from flask import jsonify, request, current_app as app
+from flask import jsonify, request, current_app
 from flask_restful import Resource
 from pydantic import BaseModel, Field
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
-from app.auth import auth_required
-from app.categories.resources.categories_resource import CategoryService
-from app.db import session
-from app.decorators import validate_allowed_image
-from app.models import Product
+from flask_api.app.auth import auth_required
+from flask_api.app.categories.resources.categories_resource import CategoryService
+from flask_api.app.decorators import validate_allowed_image
+from flask_api.app.models import Product
 
 
 class ProductSchema(BaseModel):
@@ -35,16 +34,25 @@ class ProductService:
     @classmethod
     def get_all_products(cls):
         """Get all products"""
-        return session.query(Product).all()
+        session = current_app.db_session.get_session()
+        products = session.query(Product).all()
+        return products
+
+    @classmethod
+    def get_product(cls, product_id: int):
+        """Get a product by ID"""
+        session = current_app.db_session.get_session()
+        return session.query(Product).filter(Product.id == product_id).first()
 
     @classmethod
     def create_product(cls, product_data: ProductSchema, commit: bool = True):
         """
             Create a new product
         """
-        new_product = Product(**product_data.model_dump(exclude={'categories'}))
-        new_product.categories = CategoryService.get_many_categories(
-            category_ids=product_data.categories
+        session = current_app.db_session.get_session()
+        new_product = Product(**product_data.model_dump(exclude={'category'}))
+        new_product.category = CategoryService.get_many_categories(
+            category_ids=product_data.category
         )
 
         session.add(new_product)
@@ -60,7 +68,7 @@ class ProductService:
         filename_extension = os.path.splitext(image.filename)[1]
         filename = str(uuid.uuid4()) + filename_extension
         filename = secure_filename(filename)
-        image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        image_path = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
         image.save(image_path)
         return f"product/{filename}"
 
@@ -68,7 +76,7 @@ class ProductService:
 class ProductsResource(Resource):
     """Products resource"""
 
-    # @auth_required
+    @auth_required
     def get(self):
         """Get all products"""
     # Use SQLAlchemy to query the data and perform the join
@@ -77,8 +85,8 @@ class ProductsResource(Resource):
 
             products = [
                 ProductSchema(
-                    **dict(product.__dict__.items()),
-                    category=[category.name for category in product.categories]
+                    **{k: v for k, v in product.__dict__.items() if k != 'category'},
+                    category=[category.name for category in product.category]
                 ).model_dump()
                 for product in data
             ]
@@ -96,7 +104,7 @@ class ProductsResource(Resource):
         """Create a new product"""
         try:
             product_data = dict(request.form)
-            product_data['categories'] = list(product_data['categories'])
+            product_data['category'] = list(product_data['category'])
             product_data['image'] = ProductService._save_image(request.files.get('image'))
 
             product_data = ProductSchema(**product_data)
@@ -105,6 +113,6 @@ class ProductsResource(Resource):
                 product_data=product_data,
             )
 
-            return jsonify({'message': 'Product created successfully'})
+            return jsonify({'message': f'Product {product_data.name} created successfully'})
         except Exception as e:
             return jsonify({'error': str(e)})

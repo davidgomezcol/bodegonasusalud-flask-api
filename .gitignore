@@ -24,3 +24,6 @@ config.ini
 *.sqlite3
 *.db
 *.sql
+
+# Ignore media files
+/media/

@@ -1,16 +1,16 @@
-from flask import jsonify, request
+from flask import jsonify, request, current_app
 from flask_jwt_extended import create_access_token
 from flask_restful import Resource
 from passlib.hash import django_pbkdf2_sha256
 
-from app.db import session
-from app.models import User
+from flask_api.app.models import User
 
 
 class ApiTokenResource(Resource):
     """API token resource"""
     def post(self):
         """Get a api_token for a user"""
+        session = current_app.db_session.get_session()
         data = request.get_json()
         if not data:
             return jsonify({"message": "Missing JSON in request"})
